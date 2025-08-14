@@ -1,0 +1,359 @@
+---
+title: "Capstone Cyclistic Case Study"
+author: "Toritseju"
+date: "2025-08-05"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+options(repos = list(CRAN="http://cran.rstudio.com/"))
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r install packages}
+install.packages("readxl")
+install.packages("dplyr")
+install.packages("tidyr")
+install.packages("lubridate")
+install.packages("tidyverse")
+install.packages("ggplot2")
+```
+```{r open packages}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(tidyverse)
+library(ggplot2)
+library(scales)
+```
+```{r set directory path}
+setwd("C:/Users/atoju/Toju Capstone Case Study/Capstone excel sheets")
+```
+```{r read data files}
+df1 <- read_excel("Divvy_Trips_2019_Q1.xlsx")
+df2 <- read_excel("Divvy_Trips_2020_Q1.xlsx")
+```
+```{r structure data files}
+str(df1)
+str(df2)
+```
+```{r column names data files}
+colnames(df1)
+colnames(df2)
+```
+```{r first few rows of data files}
+head(df1)
+head(df2)
+```
+```{r Rename columns in data file 1 to match data file 2}
+df1 <- df1 %>%
+  rename(ride_id = trip_id,
+         start_station_name = from_station_name,
+         start_station_id   = from_station_id,
+         end_station_name   = to_station_name,
+         end_station_id     = to_station_id)
+```
+
+
+```{r Rename columns in datafile 2 to match dta file 1}
+df2 <- df2 %>%
+  rename(start_time = started_at,
+         end_time   = ended_at,
+         usertype   = member_casual)
+```
+
+
+```{r verify column names in df1 and df2 match after renaming}
+colnames(df1)
+colnames(df2)
+```
+```{r Delete unwanted columns in df1}
+df1 <- df1 %>% 
+  select(-bikeid, -gender, -birthyear)
+```
+```{r Delete unwanted columns in df2}
+df2 <- df2 %>%
+  select(-rideable_type, -start_lat, -start_lng, -end_lat, -end_lng)
+```
+```{r Verify Column names match in df1 and df2 after deletion of unwanted columns}
+colnames(df1)
+colnames(df2)
+```
+```{r set date time format for trip duration calculation in df2}
+df2$start_time <- as.POSIXct(df2$start_time, tz= "UTC")
+df2$end_time <- as.POSIXct(df2$end_time, tz = "UTC")
+```
+
+
+```{r Calculate trip duration in df2 and remove negative values}
+df2 <- df2 %>%
+  mutate (tripduration = as.numeric(difftime(end_time,start_time, units = "secs")))%>%
+  filter(tripduration >=0 | is.na(tripduration))
+```
+
+
+```{r Impute missing values}
+df1$tripduration[is.na(df1$tripduration)] <- median(df1$tripduration, na.rm = TRUE)
+df2$tripduration[is.na(df2$tripduration)] <- median(df2$tripduration, na.rm = TRUE)
+```
+
+
+```{r Remove rows with missing usertype or ride_id}
+df1 <- df1 %>% filter(!is.na(df1$usertype) & !is.na(ride_id))
+df2 <- df2 %>% filter(!is.na(df2$usertype) & !is.na(ride_id))
+```
+
+
+```{r remove duplicates}
+df1 <- df1 %>%  distinct(ride_id, .keep_all = TRUE)
+df2 <- df2 %>%  distinct(ride_id, .keep_all = TRUE)
+```
+
+
+```{r Verify new column calculation was done and columns match in df1 ad df2}
+colnames(df2)
+colnames(df1)
+```
+```{r summarise statistics of  df1 and df2}
+summary(df1)
+summary(df2)
+```
+```{r change values in usertype column in df1 to match df2 usertype}
+df1 <- df1 %>%
+  mutate(usertype = case_when(
+    usertype %in% c("Subscriber") ~ "member",
+    usertype %in% c("Customer") ~ "casual",
+    TRUE ~ usertype))
+view(df1)
+```
+
+
+
+```{r verify the column match in df1 and df2 before merging data files}
+colnames(df1)
+colnames(df2)
+```
+
+
+```{r merge df1 and df2}
+merged_df <- rbind(df1,df2)
+```
+
+
+```{r structure of merged data files}
+str(merged_df)
+```
+
+
+```{r summary of merged data files}
+summary(merged_df)
+```
+
+
+```{r tibble of merged data files}
+merged_df %>% select(ride_id,tripduration,usertype) %>% head()
+```
+
+
+```{r summary of trip duration column in merged data file}
+summary(merged_df$tripduration)
+```
+
+
+```{r summary of statistics on merged data file}
+merged_df %>%
+  summarise(
+    mean_duration = mean(tripduration, na.rm = TRUE),
+    median_duration = median(tripduration, na.rm = TRUE),
+    SD_duration = sd(tripduration, na.rm = TRUE)
+  )
+```
+
+
+```{r filter out information on member riders}
+member_rides <- merged_df %>%
+  filter(usertype == "member") %>%
+  select(ride_id,usertype,tripduration)
+```
+
+
+```{r filter out information on casual riders}
+casual_rides <- merged_df %>%
+  filter(usertype == "casual") %>%
+  select(ride_id,usertype,tripduration)
+```
+
+
+```{r tibble on filtered information on member and casual riders}
+head(member_rides)
+head(casual_rides)
+```
+
+
+```{r statistics about duration summary by group member and casual}
+duration_summary <- merged_df %>%
+  group_by(usertype) %>%
+  summarise(
+    mean_duration = mean(tripduration, na.rm = TRUE),
+    median_duration = median(tripduration, na.rm = TRUE),
+    min_duration = min(tripduration, na.rm =TRUE),
+    max_duration = max(tripduration, na.rm = TRUE),
+    total_rides = n()
+  )
+print(duration_summary)
+```
+
+
+```{r get day of the week for start time of rides}
+merged_df <- merged_df %>%
+  mutate(day_of_week = wday(start_time, label = TRUE, abbr =  FALSE))
+```
+
+
+```{r list days of the week on data file}
+unique(merged_df$day_of_week)
+```
+
+
+```{r get mode for day of the week with most rides}
+day_freq <- table(merged_df$day_of_week)
+mode_day <- names(day_freq)[which.max(day_freq)]
+print(mode_day)
+print(day_freq)
+```
+
+
+```{r create mode function}
+get_mode <- function(x) {
+  tb1 <- table(x)
+  names(tb1)[which.max(tb1)]
+}
+```
+
+
+```{r get mode by usertype}
+mode_by_user <- merged_df %>%
+  group_by(usertype) %>%
+  summarise(mode_day = get_mode(day_of_week),
+            mode_count = max(table(day_of_week)))
+print(mode_by_user)
+```
+
+
+```{r change trip duration data from measurement in seconds to hours}
+merged_df <- merged_df%>%
+  mutate(tripduration = tripduration/3600)
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r boxplot duration by usertype}
+ggplot(merged_df, aes(x = usertype, y= tripduration, fill = usertype)) +
+  geom_boxplot() +
+  labs(title = "Ride Duration BY Usertype",
+       x = "User Type",
+       y = "Ride Duration (hours)") +
+  theme_minimal()
+```
+
+
+
+```{r histogram plot of duration by usertype}
+ggplot(merged_df, aes(x = tripduration, fill = usertype)) +
+geom_histogram(binwidth =1000, position = "dodge", color = "black") +
+  scale_fill_manual(values = c("member" = "blue", "casual" = "orange"))+
+  scale_y_continuous(labels = comma) +
+  labs(title = "Distribution of Ride Duration by Usertype",
+       x = "Ride Duration (hours)",
+       y = "Frequency") + 
+  theme_minimal()
+```
+
+
+```{r summary of minimum duration by user type}
+min_by_user <-merged_df %>%
+  group_by(usertype) %>% 
+  summarise(min_duration = min(tripduration, na.rm = TRUE)) %>%
+  arrange(min_duration)
+print(min_by_user)
+```
+```{r summary of maximum duration by user type}
+max_by_user <-merged_df %>%
+  group_by(usertype) %>% 
+  summarise(max_duration = max(tripduration, na.rm = TRUE)) %>%
+  arrange(max_duration)
+print(max_by_user)
+```
+
+
+```{r data information about minimum duration usertype}
+min_rows <-  merged_df %>%
+  group_by(usertype) %>%
+  filter(tripduration == min(tripduration, na.rm = TRUE)) %>%
+  select(ride_id,usertype,tripduration)
+print(min_rows)
+```
+
+
+```{r barchart of number of rides by day of the week}
+ggplot(merged_df,aes(x=day_of_week)) +
+  geom_bar(fill = "blue", color = "black") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+  labs(title = "Number of Rides by Day of the Week",
+       x = "Day of the week",
+       Y = "Number of Rides") +
+  theme_minimal()
+```
+
+
+```{r barchart on number of rides by day of the week by usertype}
+ggplot(merged_df, aes(x = day_of_week, fill =usertype)) +
+  geom_bar(position = "dodge") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+  labs(title = "Number of Rides by Day of the Week and Usertype",
+       X = "Day of the Week",
+       y = "Number of Rides") +
+  theme_minimal()
+```
+
+
+```{r information by day by usertype}
+duration_by_day_user <- merged_df %>%
+  group_by(usertype, day_of_week) %>%
+  summarise(mean_duration = mean(tripduration, na.rm = TRUE),
+            median_duration = median(tripduration, na.rm = TRUE),
+            min_duration = min(tripduration, na.rm = TRUE),
+            Total_rides = n(),
+            .groups = "drop"
+  )
+```
+
+
+
+```{r information by day by usertype 2}
+print(duration_by_day_user)
+```
+```{r export files}
+write.csv(member_rides,"member_rides.csv", row.names = FALSE)
+write.csv(casual_rides,"casual_rides.csv", row.names = FALSE)
+write.csv(duration_summary,"duration_by_usertype.csv", row.names = FALSE)
+write.csv(mode_by_user,"mode_day_by_user.csv", row.names = FALSE)
+write.csv(duration_by_day_user,"duration_by_day_User.csv",row.names = FALSE)
+write.csv(as.data.frame(table(merged_df$day_of_week)),"day_of_the_week_freq.csv", row.names = FALSE)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
